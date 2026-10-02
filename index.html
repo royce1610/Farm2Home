@@ -715,6 +715,7 @@ async function loadProducts(){
   const { data, error } = await sb
     .from('products')
     .select('*')
+    .eq('is_archived', false)
     .gt('stock', 0)
     .order('created_at', { ascending: false });
 
@@ -1077,26 +1078,25 @@ async function updateStock(productId, input){
 
 async function deleteProduct(productId){
   if(currentProfile?.role !== 'farmer'){
-    alert('Only farmers can remove products.');
+    notify('Only farmers can remove their products.');
     return;
   }
-
-  if(!confirm('Remove this product?')) return;
-
-  const { error } = await sb
-    .from('products')
-    .delete()
-    .eq('id', productId)
-    .eq('farmer_id', currentProfile.id);
-
-  if(error){
-    console.error('Delete product error:', error);
-    alert('Could not remove product: ' + error.message);
-    return;
+  if(!confirm('Remove this product from sale? It will disappear from active listings. Existing orders will keep their product details.')) return;
+  try{
+    const { error } = await sb.from('products')
+      .update({is_archived: true})
+      .eq('id', productId)
+      .eq('farmer_id', currentProfile.id)
+      .select('id')
+      .single();
+    if(error) throw error;
+    notify('Product removed from sale. Existing orders are preserved.');
+    await loadProducts();
+    await loadFarmerDashboard();
+  }catch(error){
+    console.error('Archive product error:', error);
+    notify('Could not remove product: ' + error.message);
   }
-
-  await loadProducts();
-  await loadFarmerDashboard();
 }
 
 async function loadFarmerDashboard(){
@@ -1119,6 +1119,7 @@ async function loadFarmerDashboard(){
       .from('products')
       .select('*')
       .eq('farmer_id', currentProfile.id)
+      .eq('is_archived', false)
       .order('created_at', { ascending: false }),
 
     sb
