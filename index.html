@@ -1046,6 +1046,44 @@ async function addProduct(event){
   return false;
 }
 
+async function updatePrice(productId, button){
+  if(currentProfile?.role !== 'farmer'){
+    notify('Only farmers can update their product prices.');
+    return;
+  }
+  const input=document.getElementById('price-'+productId);
+  const raw=input?.value.trim() ?? '';
+  const price=Number(raw);
+  if(!raw || !Number.isFinite(price) || price<0 || price>99999999.99 || Math.abs(price*100-Math.round(price*100))>0.000001){
+    notify('Enter a price from ₹0 to ₹99,999,999.99 with up to two decimal places.');
+    input?.focus();
+    return;
+  }
+  const label=button.textContent;
+  button.disabled=true;
+  button.textContent='Saving…';
+  input.disabled=true;
+  try{
+    const {data,error}=await sb.from('products')
+      .update({price})
+      .eq('id',productId)
+      .eq('farmer_id',currentProfile.id)
+      .eq('is_archived',false)
+      .select('price')
+      .single();
+    if(error) throw error;
+    input.value=Number(data.price).toFixed(2);
+    notify('Price saved. Existing orders keep their original price.');
+    await loadProducts();
+  }catch(error){
+    notify('Could not save price: '+error.message);
+  }finally{
+    button.disabled=false;
+    button.textContent=label;
+    input.disabled=false;
+  }
+}
+
 async function updateStock(productId, input){
   if(currentProfile?.role !== 'farmer'){
     alert('Only farmers can update stock.');
@@ -1152,7 +1190,13 @@ async function loadFarmerDashboard(){
       : safeProducts.map(p => `
           <tr>
             <td>${escapeHtml(p.name)}</td>
-            <td>₹${Number(p.price || 0).toFixed(2)}/${escapeHtml(p.unit)}</td>
+            <td>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <label for="price-${p.id}">₹ / ${escapeHtml(p.unit)}</label>
+                <input id="price-${p.id}" class="stock-edit" style="width:110px" type="number" min="0" max="99999999.99" step="0.01" value="${Number(p.price || 0).toFixed(2)}" aria-label="Price for ${escapeHtml(p.name)}">
+                <button class="small-btn" onclick="updatePrice('${p.id}',this)">Save price</button>
+              </div>
+            </td>
             <td>
               <input
                 class="stock-edit"
